@@ -1,0 +1,12 @@
+.{
+    .name = .zapmenu,
+    .version = "0.2.0",
+    .fingerprint = 0xb34f89a405f09191,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+        "LICENSE",
+    },
+}
