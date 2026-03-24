@@ -90,12 +90,25 @@ cmd + alt - b : pkill -USR1 zapmenu
 
 ### AeroSpace example
 
-In your aerospace config, bind a key or use a callback:
+Two things are needed: auto-start zapmenu at login, and a binding to toggle it.
+
+In `after-startup-command`, launch zapmenu so it is always running:
 
 ```toml
-[key-mapping]
-cmd-alt-b = "exec-and-forget pkill -USR1 zapmenu"
+after-startup-command = [
+  "exec-and-forget /usr/local/bin/zapmenu"
+]
 ```
+
+Then bind the toggle inside a service mode (or any mode you prefer). The `b` key in `mode.service` here sends SIGUSR1 and returns to main mode:
+
+```toml
+mode.service.binding = {
+  b = ["exec-and-forget /bin/bash -c 'pkill -USR1 zapmenu'" "mode main"]
+}
+```
+
+Enter service mode with your existing binding (e.g. `alt-shift-semicolon = "mode service"`), then press `b` to toggle the clamp. See a [full working example in nix-darwin](https://github.com/kaynetik/kaynix/blob/03fcbf9e606d9291f2a4a8f7d452fa37d42e2c54/modules/aerospace.nix#L107).
 
 ### Hammerspoon example
 
