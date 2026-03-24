@@ -1,11 +1,5 @@
 .vscode
 .swp
 
-# Legacy C build artifacts
-/zapmenu
-/zapmenu-arm64
-/zapmenu-x86_64
-
-# Zig build artifacts
 zig-out/
 .zig-cache/
