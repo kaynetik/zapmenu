@@ -133,7 +133,7 @@ zig build bench                        # run hot-path benchmarks
 ## Benchmark
 
 ```bash
-zig build bench 
+zig build bench
 
 # clampY (clamped):     4713000ns total, 0ns/call (10000000 iters)
 # clampY (passthrough): 3164917ns total, 0ns/call (10000000 iters)

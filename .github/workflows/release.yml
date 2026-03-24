@@ -18,7 +18,7 @@ jobs:
           - x86_64-macos
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: mlugg/setup-zig@v2
         with:
@@ -33,7 +33,7 @@ jobs:
           tar -czf "$ARCHIVE" -C zig-out/bin zapmenu
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: zapmenu-${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
@@ -42,7 +42,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           merge-multiple: true
 
