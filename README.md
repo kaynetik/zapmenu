@@ -1,7 +1,7 @@
 <h3 align="center">
  <br/>
  <img src="https://raw.githubusercontent.com/catppuccin/catppuccin/main/assets/misc/transparent.png" height="30" width="0px"/>
-  zapmenu
+  <bold>zapmenu</bold> - ditch annoying MacOS top Menu Bar
  <img src="https://raw.githubusercontent.com/catppuccin/catppuccin/main/assets/misc/transparent.png" height="30" width="0px"/>
 </h3>
 
@@ -9,11 +9,9 @@
  <a href="https://github.com/kaynetik/zapmenu/releases/latest"><img src="https://img.shields.io/github/v/release/kaynetik/zapmenu?colorA=363a4f&colorB=a6da95&style=for-the-badge&logo=github&logoColor=d8dee9" alt="Latest release"></a>
  <a href="https://github.com/kaynetik/zapmenu/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/kaynetik/zapmenu/ci.yml?branch=main&colorA=363a4f&style=for-the-badge&logo=github&logoColor=d8dee9&label=CI" alt="CI status"></a>
  <a href="https://github.com/kaynetik/zapmenu/commits"><img src="https://img.shields.io/github/last-commit/kaynetik/zapmenu?colorA=363a4f&colorB=f5a97f&style=for-the-badge" alt="Last commit"></a>
- <a href="https://github.com/kaynetik/zapmenu/blob/main/LICENSE"><img src="https://img.shields.io/github/license/kaynetik/zapmenu?colorA=363a4f&colorB=b7bdf8&style=for-the-badge" alt="License"></a>
+ <a href="https://github.com/kaynetik/zapmenu/blob/main/LICENSE"><img src="https://img.shields.io/github/license/kaynetik/zapmenu?colorA=363a4f&colorB=b7bdf7&style=for-the-badge" alt="License"></a>
 </p>
 
-
-# zapmenu
 
 Blocks the macOS auto-hide menu bar from appearing when you move your mouse to the top of the screen (e.g. switching browser tabs).
 
@@ -108,7 +106,7 @@ mode.service.binding = {
 }
 ```
 
-Enter service mode with your existing binding (e.g. `alt-shift-semicolon = "mode service"`), then press `b` to toggle the clamp. See a [full working example in nix-darwin](https://github.com/kaynetik/kaynix/blob/03fcbf9e606d9291f2a4a8f7d452fa37d42e2c54/modules/aerospace.nix#L107).
+Enter service mode with your existing binding (e.g. `alt-shift-semicolon = "mode service"`), then press `b` to toggle the clamp. See a [full working example in nix-darwin](https://github.com/kaynetik/kaynix/blob/main/modules/aerospace.nix).
 
 ### Hammerspoon example
 

@@ -46,8 +46,18 @@ pub fn installSignalHandler() void {
 
 fn handleSignal(sig: i32) callconv(.c) void {
     switch (sig) {
-        std.posix.SIG.USR1 => bypass_active = !bypass_active,
-        std.posix.SIG.USR2 => bypass_active = false,
+        std.posix.SIG.USR1 => {
+            bypass_active = !bypass_active;
+            logSignal(if (bypass_active) "zapmenu: clamp OFF\n" else "zapmenu: clamp ON\n");
+        },
+        std.posix.SIG.USR2 => {
+            bypass_active = false;
+            logSignal("zapmenu: clamp ON\n");
+        },
         else => {},
     }
+}
+
+fn logSignal(msg: []const u8) void {
+    _ = std.posix.write(std.posix.STDERR_FILENO, msg) catch {};
 }
