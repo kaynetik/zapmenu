@@ -1,11 +1,20 @@
 const std = @import("std");
 
+/// Zig 0.16.0's default macOS range still tops out at 15.6. Pin a range that
+/// covers Sequoia (15), Tahoe (26), and macOS 27 without marking a native
+/// macOS 27 build as minos=27 (which would refuse to run on 15/26).
+const macos_min: std.SemanticVersion = .{ .major = 13, .minor = 0, .patch = 0 };
+const macos_max: std.SemanticVersion = .{ .major = 27, .minor = 0, .patch = 0 };
+
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{
+    const query = withMacosVersionRange(b.standardTargetOptionsQueryOnly(.{
         .default_target = .{
             .os_tag = .macos,
+            .os_version_min = .{ .semver = macos_min },
+            .os_version_max = .{ .semver = macos_max },
         },
-    });
+    }));
+    const target = b.resolveTargetQuery(query);
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
@@ -58,9 +67,18 @@ pub fn build(b: *std.Build) void {
     bench_step.dependOn(&run_bench.step);
 }
 
+fn withMacosVersionRange(query: std.Target.Query) std.Target.Query {
+    var q = query;
+    const os_tag = q.os_tag orelse @import("builtin").os.tag;
+    if (os_tag != .macos) return q;
+    if (q.os_version_min == null) q.os_version_min = .{ .semver = macos_min };
+    if (q.os_version_max == null) q.os_version_max = .{ .semver = macos_max };
+    return q;
+}
+
 fn addDarwinSdkPaths(b: *std.Build, module: *std.Build.Module) void {
     if (b.graph.host.result.os.tag == .macos) {
-        if (std.zig.system.darwin.getSdk(b.graph.arena, &b.graph.host.result)) |sdk| {
+        if (std.zig.system.darwin.getSdk(b.graph.arena, b.graph.io, &b.graph.host.result)) |sdk| {
             module.addFrameworkPath(.{
                 .cwd_relative = b.fmt("{s}/System/Library/Frameworks", .{sdk}),
             });

@@ -44,7 +44,7 @@ pub fn installSignalHandler() void {
     std.posix.sigaction(std.posix.SIG.USR2, &act, null);
 }
 
-fn handleSignal(sig: i32) callconv(.c) void {
+fn handleSignal(sig: std.posix.SIG) callconv(.c) void {
     switch (sig) {
         std.posix.SIG.USR1 => {
             bypass_active = !bypass_active;
@@ -59,5 +59,5 @@ fn handleSignal(sig: i32) callconv(.c) void {
 }
 
 fn logSignal(msg: []const u8) void {
-    _ = std.posix.write(std.posix.STDERR_FILENO, msg) catch {};
+    _ = std.posix.system.write(std.posix.STDERR_FILENO, msg.ptr, msg.len);
 }

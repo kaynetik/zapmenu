@@ -58,6 +58,13 @@ pub extern "CoreGraphics" fn CGEventTapEnable(
     enable: bool,
 ) callconv(.c) void;
 
+pub extern "CoreGraphics" fn CGEventTapIsEnabled(
+    tap: CFMachPortRef,
+) callconv(.c) bool;
+
+pub extern "CoreGraphics" fn CGPreflightPostEventAccess() callconv(.c) bool;
+pub extern "CoreGraphics" fn CGRequestPostEventAccess() callconv(.c) bool;
+
 pub extern "CoreGraphics" fn CGEventGetLocation(
     event: CGEventRef,
 ) callconv(.c) CGPoint;

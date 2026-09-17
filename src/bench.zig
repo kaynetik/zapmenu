@@ -3,54 +3,60 @@ const clamp = @import("clamp.zig");
 
 const iterations: u64 = 10_000_000;
 
-pub fn main() !void {
+fn elapsedNs(io: std.Io, start: std.Io.Timestamp) u64 {
+    const elapsed = start.untilNow(io, .awake);
+    return @intCast(elapsed.nanoseconds);
+}
+
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
     var buf: [512]u8 = undefined;
-    var writer = std.fs.File.stderr().writer(&buf);
+    var writer = std.Io.File.stderr().writer(io, &buf);
     const w: *std.Io.Writer = &writer.interface;
 
     clamp.resetBypass();
 
     {
-        var timer = try std.time.Timer.start();
+        const start = std.Io.Timestamp.now(io, .awake);
         var i: u64 = 0;
         while (i < iterations) : (i += 1) {
             var y: f64 = 1.0;
             _ = clamp.clampY(&y);
             std.mem.doNotOptimizeAway(&y);
         }
-        const ns = timer.read();
+        const ns = elapsedNs(io, start);
         try w.print("clampY (clamped):     {d}ns total, {d}ns/call ({d} iters)\n", .{ ns, ns / iterations, iterations });
     }
 
     {
-        var timer = try std.time.Timer.start();
+        const start = std.Io.Timestamp.now(io, .awake);
         var i: u64 = 0;
         while (i < iterations) : (i += 1) {
             var y: f64 = 500.0;
             _ = clamp.clampY(&y);
             std.mem.doNotOptimizeAway(&y);
         }
-        const ns = timer.read();
+        const ns = elapsedNs(io, start);
         try w.print("clampY (passthrough): {d}ns total, {d}ns/call ({d} iters)\n", .{ ns, ns / iterations, iterations });
     }
 
     {
-        var timer = try std.time.Timer.start();
+        const start = std.Io.Timestamp.now(io, .awake);
         var i: u64 = 0;
         while (i < iterations) : (i += 1) {
             clamp.handleKeyDown(0, 0);
         }
-        const ns = timer.read();
+        const ns = elapsedNs(io, start);
         try w.print("handleKeyDown (miss): {d}ns total, {d}ns/call ({d} iters)\n", .{ ns, ns / iterations, iterations });
     }
 
     {
-        var timer = try std.time.Timer.start();
+        const start = std.Io.Timestamp.now(io, .awake);
         var i: u64 = 0;
         while (i < iterations) : (i += 1) {
             clamp.toggleBypass();
         }
-        const ns = timer.read();
+        const ns = elapsedNs(io, start);
         try w.print("toggleBypass:         {d}ns total, {d}ns/call ({d} iters)\n", .{ ns, ns / iterations, iterations });
         clamp.resetBypass();
     }

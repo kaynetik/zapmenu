@@ -17,7 +17,7 @@ Blocks the macOS auto-hide menu bar from appearing when you move your mouse to t
 
 The app clamps the cursor so it never enters the top 4 pixels of your screen. Toggle the block on/off with **Cmd+Option+B**, or externally via Unix signals. You can also show the menu bar manually with **Ctrl+F2** (macOS built-in).
 
-Tested on **macOS Tahoe** (15.x) and later.
+Tested on **macOS Sequoia** (15), **Tahoe** (26), and **macOS 27**.
 
 ## Install (prebuilt binary)
 
@@ -118,11 +118,11 @@ end)
 
 ## Build from source
 
-Requires [Zig](https://ziglang.org/download/) 0.15.x and macOS with Xcode or Command Line Tools installed.
+Requires [Zig](https://ziglang.org/download/) 0.16.0 and macOS with Xcode or Command Line Tools installed.
 
 ```sh
 zig build                              # debug build
-zig build -Doptimize=ReleaseFast       # release build (~51KB)
+zig build -Doptimize=ReleaseFast       # release build (~55KB)
 ```
 
 The binary is placed in `zig-out/bin/zapmenu`.

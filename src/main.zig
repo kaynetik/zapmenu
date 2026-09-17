@@ -44,12 +44,16 @@ fn logState() void {
     }
 }
 
-fn printErr(comptime msg: []const u8) void {
-    std.fs.File.stderr().writeAll(msg) catch {};
+fn printErr(msg: []const u8) void {
+    _ = std.posix.system.write(std.posix.STDERR_FILENO, msg.ptr, msg.len);
 }
 
 pub fn main() void {
     clamp.installSignalHandler();
+
+    if (!c.CGPreflightPostEventAccess()) {
+        _ = c.CGRequestPostEventAccess();
+    }
 
     const event_mask: u64 = c.CGEventMaskBit(c.kCGEventMouseMoved) |
         c.CGEventMaskBit(c.kCGEventKeyDown);
@@ -64,7 +68,7 @@ pub fn main() void {
     );
 
     if (event_tap == null) {
-        printErr("failed to create event tap (check Accessibility permissions)\n");
+        printErr("failed to create event tap (grant Accessibility in System Settings → Privacy & Security)\n");
         std.process.exit(1);
     }
 
@@ -78,6 +82,10 @@ pub fn main() void {
 
     c.CFRunLoopAddSource(c.CFRunLoopGetCurrent(), run_loop_source, c.kCFRunLoopDefaultMode);
     c.CGEventTapEnable(event_tap, true);
+    if (!c.CGEventTapIsEnabled(event_tap)) {
+        printErr("event tap disabled (grant Accessibility in System Settings → Privacy & Security)\n");
+        std.process.exit(1);
+    }
     c.CFRelease(event_tap);
     c.CFRelease(run_loop_source);
 

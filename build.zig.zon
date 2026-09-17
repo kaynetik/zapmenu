@@ -1,6 +1,7 @@
 .{
     .name = .zapmenu,
     .version = "0.2.0",
+    .minimum_zig_version = "0.16.0",
     .fingerprint = 0xb34f89a405f09191,
     .paths = .{
         "build.zig",
