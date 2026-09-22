@@ -21,51 +21,58 @@ fn eventTapCallback(
     event: c.CGEventRef,
     _: ?*anyopaque,
 ) callconv(.c) c.CGEventRef {
-    switch (event_type) {
-        c.kCGEventKeyDown => {
-            const was_active = clamp.isBypassActive();
-            const flags = c.CGEventGetFlags(event);
-            const keycode: u16 = @intCast(c.CGEventGetIntegerValueField(event, c.kCGKeyboardEventKeycode));
-            clamp.handleKeyDown(flags, keycode);
-            if (was_active != clamp.isBypassActive()) {
-                if (clamp.isBypassActive()) {
-                    reattach();
-                    releaseMenuBar();
-                } else holdMenuBar();
-                logState();
-            }
-            return event;
-        },
-        c.kCGEventMouseMoved, c.kCGEventLeftMouseDragged, c.kCGEventRightMouseDragged, c.kCGEventOtherMouseDragged => {
-            if (clamp.isBypassActive()) {
-                reattach();
-                return event;
-            }
-            const dx = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaX);
-            const dy = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaY);
-            if (detached) return whileDetached(dx, dy);
-            var point = c.CGEventGetLocation(event);
-            if (point.y < reveal_limit) holdMenuBar();
-            if (!clamp.clampY(&point.y)) return event;
-            pinned_x = point.x;
-            _ = c.CGWarpMouseCursorPosition(point);
-            _ = c.CGAssociateMouseAndMouseCursorPosition(0);
-            detached = true;
-            return null;
-        },
-        c.kCGEventTapDisabledByTimeout, c.kCGEventTapDisabledByUserInput => {
-            printErr("zapmenu: tap disabled, re-enabling\n");
-            if (tap_port != null) c.CGEventTapEnable(tap_port, true);
-            return event;
-        },
-        else => return event,
+    return switch (event_type) {
+        c.kCGEventKeyDown => onKeyDown(event),
+        c.kCGEventMouseMoved, c.kCGEventLeftMouseDragged, c.kCGEventRightMouseDragged, c.kCGEventOtherMouseDragged => onMouse(event),
+        c.kCGEventTapDisabledByTimeout, c.kCGEventTapDisabledByUserInput => reenableTap(event),
+        else => event,
+    };
+}
+
+fn onKeyDown(event: c.CGEventRef) c.CGEventRef {
+    const was_active = clamp.isBypassActive();
+    const flags = c.CGEventGetFlags(event);
+    const keycode: u16 = @intCast(c.CGEventGetIntegerValueField(event, c.kCGKeyboardEventKeycode));
+    clamp.handleKeyDown(flags, keycode);
+    if (was_active != clamp.isBypassActive()) {
+        if (clamp.isBypassActive()) {
+            reattach();
+            releaseMenuBar();
+        } else holdMenuBar();
+        logState();
     }
+    return event;
+}
+
+fn onMouse(event: c.CGEventRef) c.CGEventRef {
+    if (clamp.isBypassActive()) {
+        reattach();
+        return event;
+    }
+    const dx = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaX);
+    const dy = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaY);
+    if (detached) return whileDetached(dx, dy);
+
+    var point = c.CGEventGetLocation(event);
+    if (point.y < reveal_limit) holdMenuBar();
+    if (!clamp.clampY(&point.y)) return event;
+
+    pinned_x = point.x;
+    _ = c.CGWarpMouseCursorPosition(point);
+    _ = c.CGAssociateMouseAndMouseCursorPosition(0);
+    detached = true;
+    return null;
+}
+
+fn reenableTap(event: c.CGEventRef) c.CGEventRef {
+    printErr("zapmenu: tap disabled, re-enabling\n");
+    if (tap_port != null) c.CGEventTapEnable(tap_port, true);
+    return event;
 }
 
 fn whileDetached(dx: i64, dy: i64) c.CGEventRef {
-    // The pointer sits inside the reveal strip. Cancel that reveal without warping.
-    if (!clamp.isBypassActive()) _ = c.SLSInterruptMenuBarReveal(c.SLSMainConnectionID());
     // CG y grows downward, so a positive delta leaves the 4px strip.
+    if (!clamp.isBypassActive()) _ = c.SLSInterruptMenuBarReveal(c.SLSMainConnectionID());
     if (dy > 0) {
         pinned_x += @floatFromInt(dx);
         _ = c.CGWarpMouseCursorPosition(.{ .x = pinned_x, .y = clamp.min_y + @as(f64, @floatFromInt(dy)) });
@@ -99,26 +106,25 @@ fn holdMenuBar() void {
 
 fn releaseMenuBar() void {
     if (!menu_held) return;
+    restoreMenuBar();
+    menu_held = false;
+}
+
+fn restoreMenuBar() void {
     const cid = c.SLSMainConnectionID();
     c._HIMenuBarPositionUnlock();
     _ = c.SLSSetMenuBarInsetAndAlpha(cid, 0, 0, 1);
     _ = c.SLSInterruptMenuBarReveal(cid);
-    menu_held = false;
 }
 
 fn handleExit(_: std.posix.SIG) callconv(.c) void {
     _ = c.CGAssociateMouseAndMouseCursorPosition(1);
-    c._HIMenuBarPositionUnlock();
-    _ = c.SLSSetMenuBarInsetAndAlpha(c.SLSMainConnectionID(), 0, 0, 1);
+    restoreMenuBar();
     std.process.exit(0);
 }
 
 fn logState() void {
-    if (clamp.isBypassActive()) {
-        printErr("zapmenu: clamp OFF\n");
-    } else {
-        printErr("zapmenu: clamp ON\n");
-    }
+    printErr(if (clamp.isBypassActive()) "zapmenu: clamp OFF\n" else "zapmenu: clamp ON\n");
 }
 
 fn logPoint(tag: []const u8, y: f64) void {
@@ -128,20 +134,21 @@ fn logPoint(tag: []const u8, y: f64) void {
 }
 
 fn requestControlAccess() void {
-    // Moving the pointer requires PostEvent plus the accessibility client
-    // grant. On macOS 27 both show up as "Device Control and Data Access".
-    // Input Monitoring (ListenEvent) only allows a listen-only tap, which
-    // cannot clamp the cursor, so CGEventTapCreate(default) returns null.
-    const listen = c.IOHIDCheckAccess(c.kIOHIDRequestTypeListenEvent);
+    logAccess("input-monitoring (listen)", c.IOHIDCheckAccess(c.kIOHIDRequestTypeListenEvent));
     const post = c.IOHIDCheckAccess(c.kIOHIDRequestTypePostEvent);
-    logAccess("input-monitoring (listen)", listen);
     logAccess("device-control (post)", post);
+    if (post != c.kIOHIDAccessTypeGranted) requestPostEventAccess();
 
-    if (post != c.kIOHIDAccessTypeGranted) {
-        _ = c.IOHIDRequestAccess(c.kIOHIDRequestTypePostEvent);
-        if (!c.CGPreflightPostEventAccess()) _ = c.CGRequestPostEventAccess();
-    }
+    const trusted = axClientTrusted();
+    printErr(if (trusted) "zapmenu: device-control client trusted\n" else "zapmenu: device-control client not trusted\n");
+}
 
+fn requestPostEventAccess() void {
+    _ = c.IOHIDRequestAccess(c.kIOHIDRequestTypePostEvent);
+    if (!c.CGPreflightPostEventAccess()) _ = c.CGRequestPostEventAccess();
+}
+
+fn axClientTrusted() bool {
     const keys = [_]*anyopaque{c.kAXTrustedCheckOptionPrompt};
     const values = [_]*anyopaque{c.kCFBooleanTrue};
     const options = c.CFDictionaryCreate(
@@ -152,9 +159,8 @@ fn requestControlAccess() void {
         &c.kCFTypeDictionaryKeyCallBacks,
         &c.kCFTypeDictionaryValueCallBacks,
     );
-    const trusted = c.AXIsProcessTrustedWithOptions(options);
-    if (options) |dict| c.CFRelease(dict);
-    printErr(if (trusted) "zapmenu: device-control client trusted\n" else "zapmenu: device-control client not trusted\n");
+    defer if (options) |dict| c.CFRelease(dict);
+    return c.AXIsProcessTrustedWithOptions(options);
 }
 
 fn logAccess(tag: []const u8, access: c.IOHIDAccessType) void {
@@ -166,6 +172,24 @@ fn logAccess(tag: []const u8, access: c.IOHIDAccessType) void {
     var buf: [96]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "zapmenu: {s} = {s}\n", .{ tag, state }) catch return;
     printErr(msg);
+}
+
+/// A terminal launch is judged as the parent app, so that app's Device Control
+/// switch is what TCC checks. Start the bundle on its own when that happens.
+/// Otherwise the tap was denied for this binary: name the macOS 27 pane and open it.
+fn macos27Notification() noreturn {
+    if (relaunchViaLaunchServices()) {
+        printErr("zapmenu: a terminal launch is judged as the parent app, so the zapmenu switch is ignored.\n");
+        printErr("zapmenu: started Zapmenu.app on its own. log: " ++ log_path ++ "\n");
+        std.process.exit(0);
+    }
+    printErr("failed to create event tap.\n");
+    printErr("macOS 27 renamed Accessibility to Device Control and Data Access.\n");
+    printErr("Input Monitoring is not enough: moving the cursor needs that pane.\n");
+    printErr("  System Settings → Privacy & Security → Device Control and Data Access\n");
+    printErr("enable zapmenu there, then run it again.\n");
+    _ = c.system("open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\"");
+    std.process.exit(1);
 }
 
 fn relaunchViaLaunchServices() bool {
@@ -246,6 +270,65 @@ fn parseArgs(args: std.process.Args) Mode {
     return mode;
 }
 
+/// A warp otherwise swallows local mouse moves for 0.25s. The source has to
+/// stay alive; releasing it drops the interval.
+fn disableWarpSuppression() void {
+    _ = c.CGSetLocalEventsSuppressionInterval(0);
+    if (c.CGEventSourceCreate(c.kCGEventSourceStateHIDSystemState)) |src| {
+        c.CGEventSourceSetLocalEventsSuppressionInterval(src, 0);
+    }
+}
+
+fn installExitHandler() void {
+    const exit_act = std.posix.Sigaction{
+        .handler = .{ .handler = handleExit },
+        .mask = std.posix.sigemptyset(),
+        .flags = std.posix.SA.RESTART,
+    };
+    std.posix.sigaction(std.posix.SIG.INT, &exit_act, null);
+    std.posix.sigaction(std.posix.SIG.TERM, &exit_act, null);
+}
+
+fn createEventTap() c.CFMachPortRef {
+    const event_mask: u64 = c.CGEventMaskBit(c.kCGEventMouseMoved) |
+        c.CGEventMaskBit(c.kCGEventLeftMouseDragged) |
+        c.CGEventMaskBit(c.kCGEventRightMouseDragged) |
+        c.CGEventMaskBit(c.kCGEventOtherMouseDragged) |
+        c.CGEventMaskBit(c.kCGEventKeyDown);
+    return c.CGEventTapCreate(
+        c.kCGHIDEventTap,
+        c.kCGHeadInsertEventTap,
+        c.kCGEventTapOptionDefault,
+        event_mask,
+        &eventTapCallback,
+        null,
+    );
+}
+
+fn installEventTap(event_tap: c.CFMachPortRef) void {
+    tap_port = event_tap;
+    const run_loop_source = c.CFMachPortCreateRunLoopSource(null, event_tap, 0);
+    if (run_loop_source == null) {
+        printErr("failed to create run loop source\n");
+        std.process.exit(1);
+    }
+    c.CFRunLoopAddSource(c.CFRunLoopGetCurrent(), run_loop_source, c.kCFRunLoopDefaultMode);
+    c.CGEventTapEnable(event_tap, true);
+    if (!c.CGEventTapIsEnabled(event_tap)) {
+        printErr("event tap disabled (grant Device Control and Data Access)\n");
+        std.process.exit(1);
+    }
+    c.CFRelease(event_tap);
+    c.CFRelease(run_loop_source);
+}
+
+fn runLoop() void {
+    while (true) {
+        if (clamp.isBypassActive()) releaseMenuBar() else holdMenuBar();
+        _ = c.CFRunLoopRunInMode(c.kCFRunLoopDefaultMode, 0.2, false);
+    }
+}
+
 pub fn main(init: std.process.Init.Minimal) void {
     printErr("zapmenu: start (log " ++ log_path ++ ")\n");
     if (parseArgs(init.args) == .probe) {
@@ -254,76 +337,16 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
 
     clamp.installSignalHandler();
+    installExitHandler();
     requestControlAccess();
+    disableWarpSuppression();
 
-    // A warp otherwise suppresses local mouse events for 0.25s, which feels
-    // like the cursor froze. Zero it on the process and on a source we keep.
-    _ = c.CGSetLocalEventsSuppressionInterval(0);
-    if (c.CGEventSourceCreate(c.kCGEventSourceStateHIDSystemState)) |src| {
-        c.CGEventSourceSetLocalEventsSuppressionInterval(src, 0);
-    }
-
-    const exit_act = std.posix.Sigaction{
-        .handler = .{ .handler = handleExit },
-        .mask = std.posix.sigemptyset(),
-        .flags = std.posix.SA.RESTART,
-    };
-    std.posix.sigaction(std.posix.SIG.INT, &exit_act, null);
-    std.posix.sigaction(std.posix.SIG.TERM, &exit_act, null);
-
-    const event_mask: u64 = c.CGEventMaskBit(c.kCGEventMouseMoved) |
-        c.CGEventMaskBit(c.kCGEventLeftMouseDragged) |
-        c.CGEventMaskBit(c.kCGEventRightMouseDragged) |
-        c.CGEventMaskBit(c.kCGEventOtherMouseDragged) |
-        c.CGEventMaskBit(c.kCGEventKeyDown);
-
-    const event_tap = c.CGEventTapCreate(
-        c.kCGHIDEventTap,
-        c.kCGHeadInsertEventTap,
-        c.kCGEventTapOptionDefault,
-        event_mask,
-        &eventTapCallback,
-        null,
-    );
-
-    if (event_tap == null) {
-        if (relaunchViaLaunchServices()) {
-            printErr("zapmenu: a terminal launch is judged as the parent app (Cursor's Device Control switch is off), so the zapmenu switch is ignored.\n");
-            printErr("zapmenu: started Zapmenu.app on its own. log: " ++ log_path ++ "\n");
-            std.process.exit(0);
-        }
-        printErr("failed to create event tap.\n");
-        printErr("macOS 27 renamed Accessibility to Device Control and Data Access.\n");
-        printErr("Input Monitoring is not enough: moving the cursor needs that pane.\n");
-        printErr("  System Settings → Privacy & Security → Device Control and Data Access\n");
-        printErr("enable zapmenu there, then run it again.\n");
-        _ = c.system("open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\"");
-        std.process.exit(1);
-    }
-
-    tap_port = event_tap;
-
-    const run_loop_source = c.CFMachPortCreateRunLoopSource(null, event_tap, 0);
-    if (run_loop_source == null) {
-        printErr("failed to create run loop source\n");
-        std.process.exit(1);
-    }
-
-    c.CFRunLoopAddSource(c.CFRunLoopGetCurrent(), run_loop_source, c.kCFRunLoopDefaultMode);
-    c.CGEventTapEnable(event_tap, true);
-    if (!c.CGEventTapIsEnabled(event_tap)) {
-        printErr("event tap disabled (grant Accessibility in System Settings → Privacy & Security)\n");
-        std.process.exit(1);
-    }
-    c.CFRelease(event_tap);
-    c.CFRelease(run_loop_source);
+    const event_tap = createEventTap() orelse macos27Notification();
+    installEventTap(event_tap);
 
     const bar_h: f64 = @floatFromInt(c.GetMBarHeight());
     if (bar_h > reveal_limit) reveal_limit = bar_h;
     holdMenuBar();
     printErr("zapmenu: clamp ON (top 4px)\n");
-    while (true) {
-        if (clamp.isBypassActive()) releaseMenuBar() else holdMenuBar();
-        _ = c.CFRunLoopRunInMode(c.kCFRunLoopDefaultMode, 0.2, false);
-    }
+    runLoop();
 }

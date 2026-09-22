@@ -77,9 +77,8 @@ pub extern "CoreGraphics" fn CGRequestPostEventAccess() callconv(.c) bool;
 pub extern "CoreGraphics" fn CGPreflightListenEventAccess() callconv(.c) bool;
 pub extern "CoreGraphics" fn CGRequestListenEventAccess() callconv(.c) bool;
 
-// IOKit HID access. On macOS 13+ a HID event tap is gated by "Input Monitoring"
-// (kIOHIDRequestTypeListenEvent). Modifying events additionally needs
-// PostEvent ("Accessibility").
+// ListenEvent is Input Monitoring. PostEvent is what macOS 27 labels
+// "Device Control and Data Access". A listen-only tap cannot move the cursor.
 pub const IOHIDRequestType = u32;
 pub const kIOHIDRequestTypePostEvent: IOHIDRequestType = 0;
 pub const kIOHIDRequestTypeListenEvent: IOHIDRequestType = 1;
@@ -115,8 +114,7 @@ pub extern "CoreFoundation" fn CFDictionaryCreate(
     value_call_backs: *const CFDictionaryCallBacks,
 ) callconv(.c) ?CFDictionaryRef;
 
-/// Prompts for the permission System Settings calls "Device Control and Data Access"
-/// (kTCCServiceAccessibility). The prompt is asynchronous.
+/// kTCCServiceAccessibility. macOS 27 shows the prompt as Device Control and Data Access.
 pub extern "ApplicationServices" var kAXTrustedCheckOptionPrompt: CFStringRef;
 pub extern "ApplicationServices" fn AXIsProcessTrustedWithOptions(
     options: ?CFDictionaryRef,
@@ -168,9 +166,11 @@ pub extern "CoreGraphics" fn CGSetLocalEventsSuppressionInterval(
 ) callconv(.c) CGError;
 
 pub extern "Carbon" fn GetMBarHeight() callconv(.c) i16;
+
+// The 4px clamp sits inside the menu-bar reveal strip. These hold the bar
+// shut without moving that clamp. Restore both on bypass and on exit.
 pub extern "Carbon" fn _HIMenuBarPositionLock() callconv(.c) void;
 pub extern "Carbon" fn _HIMenuBarPositionUnlock() callconv(.c) void;
-
 pub extern "SkyLight" fn SLSMainConnectionID() callconv(.c) i32;
 pub extern "SkyLight" fn SLSSetMenuBarInsetAndAlpha(cid: i32, top: f64, bottom: f64, alpha: f32) callconv(.c) i32;
 pub extern "SkyLight" fn SLSInterruptMenuBarReveal(cid: i32) callconv(.c) i32;
