@@ -28,10 +28,36 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.linkFramework("CoreGraphics", .{});
     exe.root_module.linkFramework("CoreFoundation", .{});
+    exe.root_module.linkFramework("IOKit", .{});
+    exe.root_module.linkFramework("ApplicationServices", .{});
+    exe.root_module.linkFramework("Carbon", .{});
+    exe.root_module.linkFramework("SkyLight", .{});
 
     addDarwinSdkPaths(b, exe.root_module);
 
     b.installArtifact(exe);
+
+    // App bundle so macOS 27 lists zapmenu under Device Control and Data Access.
+    // A raw ad-hoc Mach-O often never appears in that pane.
+    const app_bin = b.addInstallFile(exe.getEmittedBin(), "Zapmenu.app/Contents/MacOS/zapmenu");
+    const app_plist = b.addInstallFile(b.path("macos/Info.plist"), "Zapmenu.app/Contents/Info.plist");
+    // Ad-hoc signatures pin the Device Control grant to this build's cdhash,
+    // so the toggle in Settings stops matching after every rebuild. Pass
+    // `-Dsign-identity="zapmenu Dev"` (see scripts/create-signing-cert.sh)
+    // to sign the bundle the user actually launches.
+    const sign_identity = b.option([]const u8, "sign-identity", "codesign identity for Zapmenu.app; default is ad-hoc") orelse "-";
+    const sign_app = b.addSystemCommand(&.{
+        "codesign",
+        "--force",
+        "--sign",
+        sign_identity,
+        "--identifier",
+        "com.kaynetik.zapmenu",
+    });
+    sign_app.addArg(b.fmt("{s}/Zapmenu.app", .{b.install_prefix}));
+    sign_app.step.dependOn(&app_bin.step);
+    sign_app.step.dependOn(&app_plist.step);
+    b.getInstallStep().dependOn(&sign_app.step);
 
     const run_exe = b.addRunArtifact(exe);
     run_exe.step.dependOn(b.getInstallStep());
@@ -81,6 +107,9 @@ fn addDarwinSdkPaths(b: *std.Build, module: *std.Build.Module) void {
         if (std.zig.system.darwin.getSdk(b.graph.arena, b.graph.io, &b.graph.host.result)) |sdk| {
             module.addFrameworkPath(.{
                 .cwd_relative = b.fmt("{s}/System/Library/Frameworks", .{sdk}),
+            });
+            module.addFrameworkPath(.{
+                .cwd_relative = b.fmt("{s}/System/Library/PrivateFrameworks", .{sdk}),
             });
             module.addLibraryPath(.{
                 .cwd_relative = b.fmt("{s}/usr/lib", .{sdk}),

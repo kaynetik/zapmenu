@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("cg.zig");
 
+/// Pixels of global CG space kept above the cursor. CG y grows downward.
 pub const min_y: f64 = 4.0;
 pub const bypass_flags: u64 = c.kCGEventFlagMaskCommand | c.kCGEventFlagMaskAlternate;
 pub const bypass_keycode: u16 = 11;

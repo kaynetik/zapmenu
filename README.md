@@ -15,7 +15,7 @@
 
 Blocks the macOS auto-hide menu bar from appearing when you move your mouse to the top of the screen (e.g. switching browser tabs).
 
-The app clamps the cursor so it never enters the top 4 pixels of your screen. Toggle the block on/off with **Cmd+Option+B**, or externally via Unix signals. You can also show the menu bar manually with **Ctrl+F2** (macOS built-in).
+The app keeps the cursor out of a 4px strip at the top of the screen so the auto-hide menu bar does not appear. Toggle the block on/off with **Cmd+Option+B**, or externally via Unix signals. You can also show the menu bar manually with **Ctrl+F2** (macOS built-in).
 
 Tested on **macOS Sequoia** (15), **Tahoe** (26), and **macOS 27**.
 
@@ -49,7 +49,7 @@ mv zapmenu ~/.local/bin/
 # export PATH="$HOME/.local/bin:$PATH"
 ```
 
-> macOS will ask you to grant **Accessibility** (or **Input Monitoring**) permission to your terminal or the `zapmenu` binary on first run. The app cannot intercept mouse events without it.
+> On macOS 27, grant **Device Control and Data Access** (System Settings → Privacy & Security). That pane is the old Accessibility permission. Input Monitoring is not enough: zapmenu has to move the cursor, not only watch it.
 
 ## Usage
 
@@ -125,7 +125,11 @@ zig build                              # debug build
 zig build -Doptimize=ReleaseFast       # release build (~55KB)
 ```
 
-The binary is placed in `zig-out/bin/zapmenu`.
+The binary is placed in `zig-out/bin/zapmenu`. `zig build` also writes `zig-out/Zapmenu.app`. Run that app so macOS can list it under Device Control and Data Access:
+
+```sh
+open zig-out/Zapmenu.app
+```
 
 ### Cross-compile (on macOS)
 
