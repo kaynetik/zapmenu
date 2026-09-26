@@ -3,6 +3,7 @@ const c = @import("cg.zig");
 const clamp = @import("clamp.zig");
 
 const log_path = "/tmp/zapmenu.log";
+const bundle_id = "com.kaynetik.zapmenu";
 
 var tap_port: c.CFMachPortRef = null;
 var debug_enabled: bool = false;
@@ -192,21 +193,28 @@ fn macos27Notification() noreturn {
     std.process.exit(1);
 }
 
+/// A bare binary (e.g. /usr/local/bin/zapmenu) has no bundle of its own, so it
+/// asks Launch Services for the registered Zapmenu.app instead.
 fn relaunchViaLaunchServices() bool {
     if (skip_relaunch) return false;
-    var path_buf: [1024]u8 = undefined;
-    var size: u32 = path_buf.len;
-    if (_NSGetExecutablePath(&path_buf, &size) != 0) return false;
-    const exe_path = std.mem.sliceTo(&path_buf, 0);
-    const marker = ".app/Contents/MacOS/";
-    const idx = std.mem.indexOf(u8, exe_path, marker) orelse return false;
-    const app = exe_path[0 .. idx + 4];
+    const extra = if (debug_enabled) " --debug" else "";
     var cmd_buf: [1200]u8 = undefined;
-    const cmd = std.fmt.bufPrintZ(&cmd_buf, "open \"{s}\" --args --no-relaunch{s}", .{
-        app,
-        if (debug_enabled) " --debug" else "",
-    }) catch return false;
+    const cmd = if (ownBundlePath()) |app|
+        std.fmt.bufPrintZ(&cmd_buf, "open \"{s}\" --args --no-relaunch{s}", .{ app, extra }) catch return false
+    else
+        std.fmt.bufPrintZ(&cmd_buf, "open -b " ++ bundle_id ++ " --args --no-relaunch{s} 2>/dev/null", .{extra}) catch return false;
     return c.system(cmd.ptr) == 0;
+}
+
+fn ownBundlePath() ?[]const u8 {
+    const S = struct {
+        var path_buf: [1024]u8 = undefined;
+    };
+    var size: u32 = S.path_buf.len;
+    if (_NSGetExecutablePath(&S.path_buf, &size) != 0) return null;
+    const exe_path = std.mem.sliceTo(&S.path_buf, 0);
+    const idx = std.mem.indexOf(u8, exe_path, ".app/Contents/MacOS/") orelse return null;
+    return exe_path[0 .. idx + 4];
 }
 
 fn printErr(msg: []const u8) void {
