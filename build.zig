@@ -1,8 +1,9 @@
 const std = @import("std");
 
-/// Zig 0.16.0's default macOS range still tops out at 15.6. Pin a range that
-/// covers Sequoia (15), Tahoe (26), and macOS 27 without marking a native
-/// macOS 27 build as minos=27 (which would refuse to run on 15/26).
+/// Zig 0.17's default macOS range is 15.0 to 27.0, but zapmenu still supports
+/// macOS 13 and 14, so the minimum is pinned lower. The maximum is spelled out
+/// so a native macOS 27 build is not marked minos=27 (which would refuse to run
+/// on 15/26) regardless of future changes to the default range.
 const macos_min: std.SemanticVersion = .{ .major = 13, .minor = 0, .patch = 0 };
 const macos_max: std.SemanticVersion = .{ .major = 27, .minor = 0, .patch = 0 };
 
@@ -54,16 +55,16 @@ pub fn build(b: *std.Build) void {
         "--identifier",
         "com.kaynetik.zapmenu",
     });
-    sign_app.addArg(b.fmt("{s}/Zapmenu.app", .{b.install_prefix}));
+    // 0.17 resolves the install prefix at make time, so it is no longer a
+    // field on `Build`; address the bundle through a prefix-relative LazyPath.
+    sign_app.addFileArg(.{ .relative = .{ .base = .install_prefix, .sub_path = "Zapmenu.app" } });
     sign_app.step.dependOn(&app_bin.step);
     sign_app.step.dependOn(&app_plist.step);
     b.getInstallStep().dependOn(&sign_app.step);
 
     const run_exe = b.addRunArtifact(exe);
     run_exe.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_exe.addArgs(args);
-    }
+    run_exe.addPassthruArgs();
     const run_step = b.step("run", "Run zapmenu");
     run_step.dependOn(&run_exe.step);
 
@@ -88,7 +89,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_bench = b.addRunArtifact(bench_exe);
-    run_bench.step.dependOn(b.getInstallStep());
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
 }

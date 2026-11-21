@@ -74,9 +74,6 @@ pub extern "CoreGraphics" fn CGEventTapIsEnabled(
 pub extern "CoreGraphics" fn CGPreflightPostEventAccess() callconv(.c) bool;
 pub extern "CoreGraphics" fn CGRequestPostEventAccess() callconv(.c) bool;
 
-pub extern "CoreGraphics" fn CGPreflightListenEventAccess() callconv(.c) bool;
-pub extern "CoreGraphics" fn CGRequestListenEventAccess() callconv(.c) bool;
-
 // ListenEvent is Input Monitoring. PostEvent is what macOS 27 labels
 // "Device Control and Data Access". A listen-only tap cannot move the cursor.
 pub const IOHIDRequestType = u32;
@@ -86,7 +83,6 @@ pub const kIOHIDRequestTypeListenEvent: IOHIDRequestType = 1;
 pub const IOHIDAccessType = u32;
 pub const kIOHIDAccessTypeGranted: IOHIDAccessType = 0;
 pub const kIOHIDAccessTypeDenied: IOHIDAccessType = 1;
-pub const kIOHIDAccessTypeUnknown: IOHIDAccessType = 2;
 
 pub extern "IOKit" fn IOHIDCheckAccess(
     request_type: IOHIDRequestType,
@@ -114,6 +110,15 @@ pub extern "CoreFoundation" fn CFDictionaryCreate(
     value_call_backs: *const CFDictionaryCallBacks,
 ) callconv(.c) ?CFDictionaryRef;
 
+/// What the CFSTR() macro expands to: an immortal constant string, never released.
+pub extern "CoreFoundation" fn __CFStringMakeConstantString(c_str: [*:0]const u8) callconv(.c) CFStringRef;
+
+pub extern "CoreFoundation" fn CFPreferencesGetAppBooleanValue(
+    key: CFStringRef,
+    application_id: CFStringRef,
+    key_exists_and_has_valid_format: ?*u8,
+) callconv(.c) u8;
+
 /// kTCCServiceAccessibility. macOS 27 shows the prompt as Device Control and Data Access.
 pub extern "ApplicationServices" var kAXTrustedCheckOptionPrompt: CFStringRef;
 pub extern "ApplicationServices" fn AXIsProcessTrustedWithOptions(
@@ -126,10 +131,44 @@ pub extern "CoreGraphics" fn CGEventGetLocation(
     event: CGEventRef,
 ) callconv(.c) CGPoint;
 
-pub extern "CoreGraphics" fn CGEventSetLocation(
-    event: CGEventRef,
-    point: CGPoint,
+pub const CGDirectDisplayID = u32;
+
+pub const CGSize = extern struct {
+    width: f64,
+    height: f64,
+};
+
+pub const CGRect = extern struct {
+    origin: CGPoint,
+    size: CGSize,
+};
+
+/// Set on the first of the two callbacks CoreGraphics makes per reconfiguration.
+/// Display bounds are only trustworthy on the second.
+pub const kCGDisplayBeginConfigurationFlag: u32 = 1 << 0;
+
+pub const CGDisplayReconfigurationCallBack = *const fn (
+    CGDirectDisplayID,
+    u32,
+    ?*anyopaque,
 ) callconv(.c) void;
+
+pub extern "CoreGraphics" fn CGGetActiveDisplayList(
+    max_displays: u32,
+    active_displays: ?[*]CGDirectDisplayID,
+    display_count: *u32,
+) callconv(.c) CGError;
+
+pub extern "CoreGraphics" fn CGMainDisplayID() callconv(.c) CGDirectDisplayID;
+
+pub extern "CoreGraphics" fn CGDisplayBounds(
+    display: CGDirectDisplayID,
+) callconv(.c) CGRect;
+
+pub extern "CoreGraphics" fn CGDisplayRegisterReconfigurationCallback(
+    callback: CGDisplayReconfigurationCallBack,
+    user_info: ?*anyopaque,
+) callconv(.c) CGError;
 
 pub extern "CoreGraphics" fn CGEventGetFlags(
     event: CGEventRef,
@@ -188,8 +227,6 @@ pub extern "CoreFoundation" fn CFRunLoopAddSource(
     source: CFRunLoopSourceRef,
     mode: CFRunLoopMode,
 ) callconv(.c) void;
-
-pub extern "CoreFoundation" fn CFRunLoopRun() callconv(.c) void;
 
 pub extern "CoreFoundation" fn CFRunLoopRunInMode(
     mode: CFRunLoopMode,

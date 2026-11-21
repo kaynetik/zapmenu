@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("cg.zig");
 const clamp = @import("clamp.zig");
+const displays = @import("displays.zig");
 
 const log_path = "/tmp/zapmenu.log";
 const bundle_id = "com.kaynetik.zapmenu";
@@ -11,6 +12,7 @@ var skip_relaunch: bool = false;
 var log_fd: c_int = -1;
 var detached: bool = false;
 var pinned_x: f64 = 0;
+var pinned_y: f64 = 0;
 var menu_held: bool = false;
 var reveal_limit: f64 = 30;
 
@@ -33,7 +35,7 @@ fn eventTapCallback(
 fn onKeyDown(event: c.CGEventRef) c.CGEventRef {
     const was_active = clamp.isBypassActive();
     const flags = c.CGEventGetFlags(event);
-    const keycode: u16 = @intCast(c.CGEventGetIntegerValueField(event, c.kCGKeyboardEventKeycode));
+    const keycode: u16 = @truncate(@as(u64, @bitCast(c.CGEventGetIntegerValueField(event, c.kCGKeyboardEventKeycode))));
     clamp.handleKeyDown(flags, keycode);
     if (was_active != clamp.isBypassActive()) {
         if (clamp.isBypassActive()) {
@@ -50,15 +52,17 @@ fn onMouse(event: c.CGEventRef) c.CGEventRef {
         reattach();
         return event;
     }
-    const dx = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaX);
-    const dy = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaY);
-    if (detached) return whileDetached(dx, dy);
+    if (detached) return whileDetached(event);
 
     var point = c.CGEventGetLocation(event);
-    if (point.y < reveal_limit) holdMenuBar();
-    if (!clamp.clampY(&point.y)) return event;
+    // Top edge of the display under the pointer; null when another display
+    // sits above it and the pointer has to be free to cross.
+    const top = displays.topAt(point.x, point.y) orelse return event;
+    if (point.y < top + reveal_limit) holdMenuBar();
+    if (!clamp.clampY(top, &point.y)) return event;
 
     pinned_x = point.x;
+    pinned_y = point.y;
     _ = c.CGWarpMouseCursorPosition(point);
     _ = c.CGAssociateMouseAndMouseCursorPosition(0);
     detached = true;
@@ -71,20 +75,45 @@ fn reenableTap(event: c.CGEventRef) c.CGEventRef {
     return event;
 }
 
-fn whileDetached(dx: i64, dy: i64) c.CGEventRef {
-    // CG y grows downward, so a positive delta leaves the 4px strip.
-    if (!clamp.isBypassActive()) _ = c.SLSInterruptMenuBarReveal(c.SLSMainConnectionID());
-    if (dy > 0) {
-        pinned_x += @floatFromInt(dx);
-        _ = c.CGWarpMouseCursorPosition(.{ .x = pinned_x, .y = clamp.min_y + @as(f64, @floatFromInt(dy)) });
+fn whileDetached(event: c.CGEventRef) c.CGEventRef {
+    const dx = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaX);
+    const dy = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaY);
+    _ = c.SLSInterruptMenuBarReveal(c.SLSMainConnectionID());
+    pinned_x += @floatFromInt(dx);
+    // Sliding along the top edge can carry the pin onto a display with a
+    // different top (or reconfigure the displays under it), so re-resolve it.
+    const pin = clamp.pinFor(displays.topAt(pinned_x, pinned_y), pinned_y);
+    pinned_y = pin.y;
+    // CG y grows downward, so a positive delta leaves the guard strip.
+    if (dy > 0 or pin.free) {
+        _ = c.CGWarpMouseCursorPosition(.{ .x = pinned_x, .y = pinned_y + @as(f64, @floatFromInt(dy)) });
         reattach();
         return null;
     }
     if (dx != 0) {
-        pinned_x += @floatFromInt(dx);
-        _ = c.CGWarpMouseCursorPosition(.{ .x = pinned_x, .y = clamp.min_y });
+        _ = c.CGWarpMouseCursorPosition(.{ .x = pinned_x, .y = pinned_y });
     }
     return null;
+}
+
+/// Runs on the main run loop, like the event tap. CoreGraphics calls it twice
+/// per reconfiguration; bounds are only valid on the second call.
+fn displaysReconfigured(_: c.CGDirectDisplayID, flags: u32, _: ?*anyopaque) callconv(.c) void {
+    if (flags & c.kCGDisplayBeginConfigurationFlag != 0) return;
+    logDisplays(displays.refresh());
+}
+
+fn logDisplays(n: usize) void {
+    const bars = if (displays.singleMenuBar()) "main display only" else "every display";
+    var buf: [96]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, "zapmenu: {d} display(s), menu bar on {s}\n", .{ n, bars }) catch return;
+    printErr(msg);
+}
+
+/// Load the display list and keep it current across plugging and rearranging.
+fn watchDisplays() void {
+    logDisplays(displays.refresh());
+    _ = c.CGDisplayRegisterReconfigurationCallback(&displaysReconfigured, null);
 }
 
 fn reattach() void {
@@ -126,12 +155,6 @@ fn handleExit(_: std.posix.SIG) callconv(.c) void {
 
 fn logState() void {
     printErr(if (clamp.isBypassActive()) "zapmenu: clamp OFF\n" else "zapmenu: clamp ON\n");
-}
-
-fn logPoint(tag: []const u8, y: f64) void {
-    var buf: [80]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, "zapmenu: {s} y={d:.2}\n", .{ tag, y }) catch return;
-    printErr(msg);
 }
 
 fn requestControlAccess() void {
@@ -200,9 +223,9 @@ fn relaunchViaLaunchServices() bool {
     const extra = if (debug_enabled) " --debug" else "";
     var cmd_buf: [1200]u8 = undefined;
     const cmd = if (ownBundlePath()) |app|
-        std.fmt.bufPrintZ(&cmd_buf, "open \"{s}\" --args --no-relaunch{s}", .{ app, extra }) catch return false
+        std.mem.printSentinel(&cmd_buf, "open \"{s}\" --args --no-relaunch{s}", .{ app, extra }, 0) catch return false
     else
-        std.fmt.bufPrintZ(&cmd_buf, "open -b " ++ bundle_id ++ " --args --no-relaunch{s} 2>/dev/null", .{extra}) catch return false;
+        std.mem.printSentinel(&cmd_buf, "open -b " ++ bundle_id ++ " --args --no-relaunch{s} 2>/dev/null", .{extra}, 0) catch return false;
     return c.system(cmd.ptr) == 0;
 }
 
@@ -224,31 +247,38 @@ fn printErr(msg: []const u8) void {
             .ACCMODE = .WRONLY,
             .CREAT = true,
             .APPEND = true,
+            // /tmp is world-writable; do not write through a planted symlink.
+            .NOFOLLOW = true,
         }, @as(c_uint, 0o644));
     }
     if (log_fd >= 0) _ = std.posix.system.write(log_fd, msg.ptr, msg.len);
 }
 
-fn readCursorY() ?f64 {
+fn readCursor() ?c.CGPoint {
     const event = c.CGEventCreate(null) orelse return null;
     defer c.CFRelease(event);
-    return c.CGEventGetLocation(event).y;
+    return c.CGEventGetLocation(event);
 }
 
+/// Prints the cursor's global y and its distance below the top of the display
+/// it is on, which is the number that matters with displays above the main one.
 fn runProbe() void {
+    watchDisplays();
     printErr("zapmenu: probe — move to the top edge; Ctrl+C to stop\n");
-    printErr("zapmenu: if Y reaches 0.00, the hardware cursor is not clamped\n");
-    var last_bucket: i32 = -1;
+    printErr("zapmenu: if \"from top\" reaches 0.00, the hardware cursor is not clamped\n");
+    var last_bucket: ?i32 = null;
     while (true) {
-        if (readCursorY()) |y| {
-            const bucket: i32 = @intFromFloat(@floor(y));
-            if (bucket != last_bucket) {
-                last_bucket = bucket;
-                logPoint("probe", y);
-            }
-        } else {
+        const point = readCursor() orelse {
             printErr("failed to read cursor position\n");
             std.process.exit(1);
+        };
+        const bucket: i32 = @intFromFloat(@floor(point.y));
+        if (bucket != last_bucket) {
+            last_bucket = bucket;
+            const rects = displays.slice();
+            const top = if (rects.len > 0) clamp.displayFor(rects, point.x, point.y).y else clamp.fallback_top;
+            var buf: [96]u8 = undefined;
+            if (std.fmt.bufPrint(&buf, "zapmenu: probe y={d:.2} from top={d:.2}\n", .{ point.y, point.y - top })) |msg| printErr(msg) else |_| {}
         }
         _ = c.CFRunLoopRunInMode(c.kCFRunLoopDefaultMode, 0.05, false);
     }
@@ -352,9 +382,11 @@ pub fn main(init: std.process.Init.Minimal) void {
     const event_tap = createEventTap() orelse macos27Notification();
     installEventTap(event_tap);
 
+    watchDisplays();
+
     const bar_h: f64 = @floatFromInt(c.GetMBarHeight());
     if (bar_h > reveal_limit) reveal_limit = bar_h;
     holdMenuBar();
-    printErr("zapmenu: clamp ON (top 4px)\n");
+    printErr("zapmenu: clamp ON (top " ++ std.fmt.comptimePrint("{d}", .{@as(u32, clamp.min_y)}) ++ "px of each display)\n");
     runLoop();
 }

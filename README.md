@@ -15,13 +15,28 @@
 
 Blocks the macOS auto-hide menu bar from appearing when you move your mouse to the top of the screen (e.g. switching browser tabs).
 
-The app keeps the cursor out of a 4px strip at the top of the screen so the auto-hide menu bar does not appear. Toggle the block on/off with **Cmd+Option+B**, or externally via Unix signals. You can also show the menu bar manually with **Ctrl+F2** (macOS built-in).
+The app keeps the cursor out of a 4px strip at the top of each screen so the auto-hide menu bar does not appear. With several displays the strip follows each display's own top edge, wherever it sits in the arrangement; an edge that borders another display is left open so the cursor can cross. If "Displays have separate Spaces" is off, only the main display has a menu bar, so only that display is guarded. Toggle the block on/off with **Cmd+Option+B**, or externally via Unix signals. You can also show the menu bar manually with **Ctrl+F2** (macOS built-in).
 
 Tested on **macOS Sequoia** (15), **Tahoe** (26), and **macOS 27**.
 
-## Install (prebuilt binary)
+## Install (prebuilt)
 
-Grab the latest archive for your architecture from the [Releases page](https://github.com/kaynetik/zapmenu/releases), or use `curl`:
+### App bundle (recommended)
+
+Download `Zapmenu-<version>-universal.zip` from the [Releases page](https://github.com/kaynetik/zapmenu/releases), unzip it, and move `Zapmenu.app` to `/Applications`. It runs on both Apple Silicon and Intel. Or from a terminal:
+
+```sh
+curl -sL "$(curl -s https://api.github.com/repos/kaynetik/zapmenu/releases/latest \
+  | grep browser_download_url | grep universal.zip | cut -d '"' -f 4)" -o Zapmenu.zip
+ditto -x -k Zapmenu.zip /Applications && rm Zapmenu.zip
+open /Applications/Zapmenu.app
+```
+
+The app has no window or Dock icon. Quit it with `pkill zapmenu`.
+
+> If a release is not notarized and you downloaded it with a browser, macOS blocks the first launch. Allow it under System Settings → Privacy & Security → Open Anyway, or run `xattr -dr com.apple.quarantine /Applications/Zapmenu.app`. The `curl` commands above are not affected.
+
+### Bare binary
 
 ```sh
 # Apple Silicon (M1/M2/M3/M4)
@@ -48,6 +63,8 @@ mv zapmenu ~/.local/bin/
 # Make sure ~/.local/bin is in your PATH (add to ~/.zshrc or ~/.bashrc):
 # export PATH="$HOME/.local/bin:$PATH"
 ```
+
+Verify any download against `checksums.txt` from the same release with `shasum -a 256 -c checksums.txt --ignore-missing`.
 
 > On macOS 27, grant **Device Control and Data Access** (System Settings → Privacy & Security). That pane is the old Accessibility permission. Input Monitoring is not enough: zapmenu has to move the cursor, not only watch it.
 
@@ -118,7 +135,7 @@ end)
 
 ## Build from source
 
-Requires [Zig](https://ziglang.org/download/) 0.16.0 and macOS with Xcode or Command Line Tools installed.
+Requires [Zig](https://ziglang.org/download/) 0.17.1 and macOS with Xcode or Command Line Tools installed.
 
 ```sh
 zig build                              # debug build
@@ -150,10 +167,11 @@ zig build bench                        # run hot-path benchmarks
 ```bash
 zig build bench
 
-# clampY (clamped):     4713000ns total, 0ns/call (10000000 iters)
-# clampY (passthrough): 3164917ns total, 0ns/call (10000000 iters)
-# handleKeyDown (miss): 0ns total, 0ns/call (10000000 iters)
-# toggleBypass:         42ns total, 0ns/call (10000000 iters)
+# clampY (clamped)          1.98 ns/call (10000000 iters)
+# clampY (passthrough)      1.40 ns/call (10000000 iters)
+# exposedTop (2 displays)   3.31 ns/call (10000000 iters)
+# handleKeyDown (miss)      0.69 ns/call (10000000 iters)
+# toggleBypass              1.57 ns/call (10000000 iters)
 
 # To measure idle CPU usage, run zapmenu manually and check:
 #   ps -o %cpu,rss -p $(pgrep zapmenu)
@@ -163,4 +181,4 @@ zig build bench
 
 - This is a terminal application with no GUI.
 - macOS-only (depends on CoreGraphics event taps).
-- The 4px dead zone at the top of the screen may interfere with some apps; toggle it off with the hotkey or a signal.
+- The 4px dead zone at the top of each screen may interfere with some apps; toggle it off with the hotkey or a signal.

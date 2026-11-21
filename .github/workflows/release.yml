@@ -9,50 +9,50 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  release:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        target:
-          - aarch64-macos
-          - x86_64-macos
-
     steps:
       - uses: actions/checkout@v6
 
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.1
 
-      - name: Build
-        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast
-
-      - name: Package
+      # Optional. Without these secrets the release is ad-hoc signed.
+      - name: Import signing certificate
+        env:
+          P12_BASE64: ${{ secrets.MACOS_SIGN_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGN_P12_PASSWORD }}
         run: |
-          ARCHIVE="zapmenu-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
-          tar -czf "$ARCHIVE" -C zig-out/bin zapmenu
-          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          if [ -z "$P12_BASE64" ]; then
+            echo "No signing certificate configured; using ad-hoc signatures."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
 
-      - uses: actions/upload-artifact@v6
-        with:
-          name: zapmenu-${{ matrix.target }}
-          path: ${{ env.ARCHIVE }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v5
-        with:
-          merge-multiple: true
-
-      - name: Create checksums
-        run: sha256sum zapmenu-*.tar.gz > checksums.txt
+      - name: Build, sign and package
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: ./scripts/package-release.sh "$GITHUB_REF_NAME"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            zapmenu-*.tar.gz
-            checksums.txt
+            dist/*.zip
+            dist/*.tar.gz
+            dist/checksums.txt

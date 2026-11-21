@@ -14,7 +14,7 @@ jobs:
 
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.1
 
       - name: Build
         run: zig build
@@ -24,3 +24,12 @@ jobs:
 
       - name: Bench
         run: zig build bench
+
+      # Same script the release workflow runs, ad-hoc signed.
+      - name: Package
+        run: ./scripts/package-release.sh "v0.0.0-ci"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: zapmenu-dist
+          path: dist/
