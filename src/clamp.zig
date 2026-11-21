@@ -1,21 +1,17 @@
 const std = @import("std");
 const c = @import("cg.zig");
 
-/// Pixels kept between the cursor and the top edge of a display. CG y grows
-/// downward, and the top edge of a display is its `origin.y` in global space,
-/// which is negative for any display placed above the main one.
+/// Pixels kept below a display's top edge. CG y grows downward; the top edge is
+/// the display's origin.y, negative for displays above the main one.
 pub const min_y: f64 = 4.0;
 
-/// A display's bounds in global CG space (`CGDisplayBounds`). `menu_bar` is
-/// false for a display that never shows one: every display but the main one
-/// when "Displays have separate Spaces" is off.
+/// Display bounds in global CG space. `menu_bar` is false for displays without
+/// one ("Displays have separate Spaces" off: all but the main display).
 pub const Rect = struct { x: f64, y: f64, w: f64, h: f64, menu_bar: bool = true };
 
-/// Top edge assumed when no display list is available: the pre-multi-monitor
-/// behaviour of treating global y = 0 as the top of the screen.
+/// Top edge used when no display list is available.
 pub const fallback_top: f64 = 0.0;
 
-/// Distance from `pos` to the half-open span [start, start + len). Zero inside.
 fn spanGap(pos: f64, start: f64, len: f64) f64 {
     if (pos < start) return start - pos;
     const end = start + len;
@@ -23,11 +19,9 @@ fn spanGap(pos: f64, start: f64, len: f64) f64 {
     return 0;
 }
 
-/// The display a pointer at (x, y) belongs to. A display whose x-span covers the
-/// pointer wins over one that does not, then the one closest vertically. The
-/// pointer can sit just outside every display (mid-warp, mid-reconfiguration),
-/// so containment alone is not enough, and x is the primary key because the
-/// edge being guarded is horizontal. `rects` must not be empty.
+/// The display for a pointer at (x, y): x-span coverage first, then vertical
+/// proximity, so a pointer just outside every display (mid-warp) still resolves.
+/// `rects` must not be empty.
 pub fn displayFor(rects: []const Rect, x: f64, y: f64) Rect {
     var best = rects[0];
     var best_gx = spanGap(x, best.x, best.w);
@@ -44,10 +38,9 @@ pub fn displayFor(rects: []const Rect, x: f64, y: f64) Rect {
     return best;
 }
 
-/// Top edge to clamp against for a pointer at (x, y), or null when there is
-/// nothing to guard: the display has no menu bar, or its top is not exposed
-/// because another display sits directly above it at this x. There the pointer
-/// must be free to cross, or the display above would be unreachable.
+/// Top edge to clamp against at (x, y), or null when there is nothing to guard:
+/// no menu bar, or another display directly above (clamping there would make
+/// that display unreachable).
 pub fn exposedTop(rects: []const Rect, x: f64, y: f64) ?f64 {
     if (rects.len == 0) return fallback_top;
     const d = displayFor(rects, x, y);
@@ -59,11 +52,8 @@ pub fn exposedTop(rects: []const Rect, x: f64, y: f64) ?f64 {
     return d.y;
 }
 
-/// Where a detached (pinned) cursor should be, given the exposed top edge of
-/// the display it is now over. Sliding sideways along the top edge can carry
-/// the pin onto a display with a different top, so this is re-evaluated on
-/// every detached event. `free` means the cursor is no longer in the guard
-/// band of that display and should be handed back to the user.
+/// Pin position for a detached cursor over a display with the given top.
+/// `free` means it is outside that display's guard band and should be released.
 pub const Pin = struct { y: f64, free: bool };
 
 pub fn pinFor(top: ?f64, pinned_y: f64) Pin {
@@ -75,7 +65,7 @@ pub fn pinFor(top: ?f64, pinned_y: f64) Pin {
 pub const bypass_flags: u64 = c.kCGEventFlagMaskCommand | c.kCGEventFlagMaskAlternate;
 pub const bypass_keycode: u16 = 11;
 
-/// Written from the SIGUSR handlers as well as the event tap, hence atomic.
+/// Also written from signal handlers, hence atomic.
 var bypass_active: std.atomic.Value(bool) = .init(false);
 
 pub fn isBypassActive() bool {
@@ -86,15 +76,13 @@ pub fn resetBypass() void {
     bypass_active.store(false, .monotonic);
 }
 
-/// Returns the new state.
 pub fn toggleBypass() bool {
     const next = !isBypassActive();
     bypass_active.store(next, .monotonic);
     return next;
 }
 
-/// Clamp `y` to `min_y` below `top`, the top edge of the display the pointer is
-/// on (see `exposedTop`). Returns true when `y` was moved.
+/// Clamps `y` to `top + min_y`; true when it moved.
 pub fn clampY(top: f64, y: *f64) bool {
     if (isBypassActive()) return false;
     const limit = top + min_y;

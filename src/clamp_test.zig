@@ -130,18 +130,13 @@ test "CGEventMaskBit produces correct bitmask" {
     try std.testing.expectEqual(@as(u64, 1 << 10), c.CGEventMaskBit(c.kCGEventKeyDown));
 }
 
-// Multi-monitor regression (zapmenu 1.2.0): the clamp assumed global y = 0 is
-// the top of every display, so any display placed above the main one was
-// unreachable for its top rows.
-//
-// Layout, as reported by CGDisplayBounds:
-//   main (horizontal): origin (0, 0),        size 3200 x 1800
-//   vertical:          origin (-1800, -712), size 1800 x 3200
+// Layout from the 1.2.0 multi-monitor report: a vertical display whose top
+// (y = -712) sits above the main display's.
 const main_display: clamp.Rect = .{ .x = 0, .y = 0, .w = 3200, .h = 1800 };
 const vertical_display: clamp.Rect = .{ .x = -1800, .y = -712, .w = 1800, .h = 3200 };
 const reported_layout = [_]clamp.Rect{ main_display, vertical_display };
 
-/// The pipeline `onMouse` runs: resolve the top edge, then clamp against it.
+/// Mirrors `onMouse`.
 fn clampAt(rects: []const clamp.Rect, x: f64, y: *f64) bool {
     const top = clamp.exposedTop(rects, x, y.*) orelse return false;
     return clamp.clampY(top, y);
@@ -194,18 +189,14 @@ test "reported layout: bypass still disables the per-display clamp" {
 }
 
 test "exposedTop: pointer slightly outside every display resolves to the nearest" {
-    // Above the vertical display's top edge (mid-warp), still over its x-span.
     try std.testing.expectEqual(-712.0, clamp.exposedTop(&reported_layout, -900, -730));
-    // Past the right edge of the main display.
     try std.testing.expectEqual(0.0, clamp.exposedTop(&reported_layout, 3300, 50));
 }
 
 test "exposedTop: display stacked above main leaves main's top free to cross" {
     const above: clamp.Rect = .{ .x = 0, .y = -1000, .w = 3200, .h = 1000 };
     const rects = [_]clamp.Rect{ main_display, above };
-    // Main's top is covered by the display above it: no clamp there.
     try std.testing.expectEqual(@as(?f64, null), clamp.exposedTop(&rects, 1600, 1));
-    // The upper display's own top is the exposed one.
     try std.testing.expectEqual(@as(?f64, -1000.0), clamp.exposedTop(&rects, 1600, -999));
     var y: f64 = 1.0;
     try std.testing.expect(!clampAt(&rects, 1600, &y));
@@ -244,15 +235,12 @@ test "pinFor: pin on the line stays pinned" {
 }
 
 test "pinFor: sliding from the vertical display onto main re-pins at main's guard line" {
-    // Pinned at -708 on the vertical display, x slid across the seam onto main.
     const p = clamp.pinFor(0.0, -708.0);
     try std.testing.expect(!p.free);
     try std.testing.expectEqual(clamp.min_y, p.y);
 }
 
 test "pinFor: sliding from main into the vertical display's open area releases" {
-    // Pinned at y=4 on main; sliding left lands on the vertical display well
-    // below its own guard line at -708, so the cursor is no longer guarded.
     const p = clamp.pinFor(-712.0, clamp.min_y);
     try std.testing.expect(p.free);
     try std.testing.expectEqual(clamp.min_y, p.y);
@@ -268,7 +256,7 @@ test "toggleBypass returns the new state" {
     try std.testing.expect(!clamp.toggleBypass());
 }
 
-// "Displays have separate Spaces" off: only the main display has a menu bar.
+// "Displays have separate Spaces" off: only main has a menu bar.
 const single_bar_layout = [_]clamp.Rect{
     main_display,
     .{ .x = -1800, .y = -712, .w = 1800, .h = 3200, .menu_bar = false },

@@ -55,8 +55,6 @@ fn onMouse(event: c.CGEventRef) c.CGEventRef {
     if (detached) return whileDetached(event);
 
     var point = c.CGEventGetLocation(event);
-    // Top edge of the display under the pointer; null when another display
-    // sits above it and the pointer has to be free to cross.
     const top = displays.topAt(point.x, point.y) orelse return event;
     if (point.y < top + reveal_limit) holdMenuBar();
     if (!clamp.clampY(top, &point.y)) return event;
@@ -80,11 +78,10 @@ fn whileDetached(event: c.CGEventRef) c.CGEventRef {
     const dy = c.CGEventGetIntegerValueField(event, c.kCGMouseEventDeltaY);
     _ = c.SLSInterruptMenuBarReveal(c.SLSMainConnectionID());
     pinned_x += @floatFromInt(dx);
-    // Sliding along the top edge can carry the pin onto a display with a
-    // different top (or reconfigure the displays under it), so re-resolve it.
+    // The pin can slide onto a display with a different top.
     const pin = clamp.pinFor(displays.topAt(pinned_x, pinned_y), pinned_y);
     pinned_y = pin.y;
-    // CG y grows downward, so a positive delta leaves the guard strip.
+    // Positive dy (downward) leaves the guard strip.
     if (dy > 0 or pin.free) {
         _ = c.CGWarpMouseCursorPosition(.{ .x = pinned_x, .y = pinned_y + @as(f64, @floatFromInt(dy)) });
         reattach();
@@ -96,8 +93,6 @@ fn whileDetached(event: c.CGEventRef) c.CGEventRef {
     return null;
 }
 
-/// Runs on the main run loop, like the event tap. CoreGraphics calls it twice
-/// per reconfiguration; bounds are only valid on the second call.
 fn displaysReconfigured(_: c.CGDirectDisplayID, flags: u32, _: ?*anyopaque) callconv(.c) void {
     if (flags & c.kCGDisplayBeginConfigurationFlag != 0) return;
     logDisplays(displays.refresh());
@@ -110,7 +105,6 @@ fn logDisplays(n: usize) void {
     printErr(msg);
 }
 
-/// Load the display list and keep it current across plugging and rearranging.
 fn watchDisplays() void {
     logDisplays(displays.refresh());
     _ = c.CGDisplayRegisterReconfigurationCallback(&displaysReconfigured, null);
@@ -247,7 +241,7 @@ fn printErr(msg: []const u8) void {
             .ACCMODE = .WRONLY,
             .CREAT = true,
             .APPEND = true,
-            // /tmp is world-writable; do not write through a planted symlink.
+            // /tmp is world-writable: refuse symlinks.
             .NOFOLLOW = true,
         }, @as(c_uint, 0o644));
     }
@@ -260,8 +254,6 @@ fn readCursor() ?c.CGPoint {
     return c.CGEventGetLocation(event);
 }
 
-/// Prints the cursor's global y and its distance below the top of the display
-/// it is on, which is the number that matters with displays above the main one.
 fn runProbe() void {
     watchDisplays();
     printErr("zapmenu: probe — move to the top edge; Ctrl+C to stop\n");

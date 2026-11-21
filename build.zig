@@ -1,9 +1,7 @@
 const std = @import("std");
 
-/// Zig 0.17's default macOS range is 15.0 to 27.0, but zapmenu still supports
-/// macOS 13 and 14, so the minimum is pinned lower. The maximum is spelled out
-/// so a native macOS 27 build is not marked minos=27 (which would refuse to run
-/// on 15/26) regardless of future changes to the default range.
+/// Min is pinned below Zig's default (15) to keep macOS 13/14 working. Max is
+/// explicit so a native build is not marked minos=27, which would refuse to run on 15/26.
 const macos_min: std.SemanticVersion = .{ .major = 13, .minor = 0, .patch = 0 };
 const macos_max: std.SemanticVersion = .{ .major = 27, .minor = 0, .patch = 0 };
 
@@ -55,8 +53,6 @@ pub fn build(b: *std.Build) void {
         "--identifier",
         "com.kaynetik.zapmenu",
     });
-    // 0.17 resolves the install prefix at make time, so it is no longer a
-    // field on `Build`; address the bundle through a prefix-relative LazyPath.
     sign_app.addFileArg(.{ .relative = .{ .base = .install_prefix, .sub_path = "Zapmenu.app" } });
     sign_app.step.dependOn(&app_bin.step);
     sign_app.step.dependOn(&app_plist.step);

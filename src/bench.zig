@@ -8,8 +8,7 @@ const layout = [_]clamp.Rect{
     .{ .x = -1800, .y = -712, .w = 1800, .h = 3200 },
 };
 
-/// Inputs go through `doNotOptimizeAway` so ReleaseFast cannot fold the call
-/// into a constant and report a loop that never ran.
+/// Keeps ReleaseFast from constant-folding the benchmarked call away.
 fn opaqueValue(v: anytype) @TypeOf(v) {
     var x = v;
     std.mem.doNotOptimizeAway(&x);

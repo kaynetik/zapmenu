@@ -110,7 +110,7 @@ pub extern "CoreFoundation" fn CFDictionaryCreate(
     value_call_backs: *const CFDictionaryCallBacks,
 ) callconv(.c) ?CFDictionaryRef;
 
-/// What the CFSTR() macro expands to: an immortal constant string, never released.
+/// What CFSTR() expands to; the result is immortal.
 pub extern "CoreFoundation" fn __CFStringMakeConstantString(c_str: [*:0]const u8) callconv(.c) CFStringRef;
 
 pub extern "CoreFoundation" fn CFPreferencesGetAppBooleanValue(
@@ -143,8 +143,7 @@ pub const CGRect = extern struct {
     size: CGSize,
 };
 
-/// Set on the first of the two callbacks CoreGraphics makes per reconfiguration.
-/// Display bounds are only trustworthy on the second.
+/// Set on the first of two callbacks per reconfiguration; bounds are valid on the second.
 pub const kCGDisplayBeginConfigurationFlag: u32 = 1 << 0;
 
 pub const CGDisplayReconfigurationCallBack = *const fn (

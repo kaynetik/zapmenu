@@ -15,117 +15,48 @@
 
 Blocks the macOS auto-hide menu bar from appearing when you move your mouse to the top of the screen (e.g. switching browser tabs).
 
-The app keeps the cursor out of a 4px strip at the top of each screen so the auto-hide menu bar does not appear. With several displays the strip follows each display's own top edge, wherever it sits in the arrangement; an edge that borders another display is left open so the cursor can cross. If "Displays have separate Spaces" is off, only the main display has a menu bar, so only that display is guarded. Toggle the block on/off with **Cmd+Option+B**, or externally via Unix signals. You can also show the menu bar manually with **Ctrl+F2** (macOS built-in).
+zapmenu keeps the cursor out of a 4px strip at the top of each display. With several displays the strip follows each display's own top edge; an edge that borders another display stays open so the cursor can cross. If "Displays have separate Spaces" is off, only the main display is guarded. Toggle it with **Cmd+Option+B** or Unix signals. The menu bar can still be shown manually with **Ctrl+F2**.
 
-Tested on **macOS Sequoia** (15), **Tahoe** (26), and **macOS 27**.
+Tested on macOS Sequoia (15), Tahoe (26), and macOS 27.
 
-## Install (prebuilt)
+## Install
 
-### App bundle (recommended)
+Download `Zapmenu-<version>-universal.zip` (Apple Silicon and Intel) from the [Releases page](https://github.com/kaynetik/zapmenu/releases), unzip it, move `Zapmenu.app` to `/Applications` and open it. It has no window or Dock icon; quit it with `pkill zapmenu`.
 
-Download `Zapmenu-<version>-universal.zip` from the [Releases page](https://github.com/kaynetik/zapmenu/releases), unzip it, and move `Zapmenu.app` to `/Applications`. It runs on both Apple Silicon and Intel. Or from a terminal:
+If the release is not notarized, macOS blocks a browser download on first launch. Allow it under System Settings → Privacy & Security → Open Anyway, or run `xattr -dr com.apple.quarantine /Applications/Zapmenu.app`.
+
+Releases also include bare binaries per architecture and a `checksums.txt` (`shasum -a 256 -c checksums.txt --ignore-missing`):
 
 ```sh
 curl -sL "$(curl -s https://api.github.com/repos/kaynetik/zapmenu/releases/latest \
-  | grep browser_download_url | grep universal.zip | cut -d '"' -f 4)" -o Zapmenu.zip
-ditto -x -k Zapmenu.zip /Applications && rm Zapmenu.zip
-open /Applications/Zapmenu.app
-```
-
-The app has no window or Dock icon. Quit it with `pkill zapmenu`.
-
-> If a release is not notarized and you downloaded it with a browser, macOS blocks the first launch. Allow it under System Settings → Privacy & Security → Open Anyway, or run `xattr -dr com.apple.quarantine /Applications/Zapmenu.app`. The `curl` commands above are not affected.
-
-### Bare binary
-
-```sh
-# Apple Silicon (M1/M2/M3/M4)
-curl -sL "$(curl -s https://api.github.com/repos/kaynetik/zapmenu/releases/latest \
-  | grep browser_download_url | grep aarch64 | cut -d '"' -f 4)" | tar xz
-
-# Intel
-curl -sL "$(curl -s https://api.github.com/repos/kaynetik/zapmenu/releases/latest \
-  | grep browser_download_url | grep x86_64 | cut -d '"' -f 4)" | tar xz
-```
-
-Move the binary somewhere on your `PATH`:
-
-```sh
+  | grep browser_download_url | grep "$(uname -m | sed s/arm64/aarch64/)" | cut -d '"' -f 4)" | tar xz
 sudo mv zapmenu /usr/local/bin/
 ```
 
-Or, to install without `sudo`, use a user-local directory:
-
-```sh
-mkdir -p ~/.local/bin
-mv zapmenu ~/.local/bin/
-
-# Make sure ~/.local/bin is in your PATH (add to ~/.zshrc or ~/.bashrc):
-# export PATH="$HOME/.local/bin:$PATH"
-```
-
-Verify any download against `checksums.txt` from the same release with `shasum -a 256 -c checksums.txt --ignore-missing`.
-
-> On macOS 27, grant **Device Control and Data Access** (System Settings → Privacy & Security). That pane is the old Accessibility permission. Input Monitoring is not enough: zapmenu has to move the cursor, not only watch it.
+> Grant **Device Control and Data Access** (System Settings → Privacy & Security; the old Accessibility permission). Input Monitoring is not enough: zapmenu has to move the cursor, not only watch it.
 
 ## Usage
 
-```sh
-zapmenu
-# or run in a detached tmux session
-tmux new -d zapmenu
-```
+Run the app or `zapmenu`. Press **Cmd+Option+B** to toggle the clamp. State changes are printed to stderr and `/tmp/zapmenu.log`.
 
-Press **Cmd+Option+B** to toggle the cursor clamp on/off at runtime.
-
-State changes are printed to stderr (`zapmenu: clamp ON` / `zapmenu: clamp OFF`).
-
-## External control
-
-zapmenu listens for Unix signals, so any external tool can control it without the keyboard shortcut:
+### External control
 
 | Signal | Effect |
 |--------|--------|
 | `SIGUSR1` | Toggle clamp on/off |
-| `SIGUSR2` | Force clamp ON (reset bypass) |
+| `SIGUSR2` | Force clamp ON |
 
 ```sh
-# Toggle
 pkill -USR1 zapmenu
-
-# Force clamp back on
-pkill -USR2 zapmenu
 ```
 
-### skhd example
+**skhd**
 
 ```
 cmd + alt - b : pkill -USR1 zapmenu
 ```
 
-### AeroSpace example
-
-Two things are needed: auto-start zapmenu at login, and a binding to toggle it.
-
-In `after-startup-command`, launch zapmenu so it is always running:
-
-```toml
-after-startup-command = [
-  "exec-and-forget /usr/local/bin/zapmenu"
-]
-```
-
-Then bind the toggle inside a service mode (or any mode you prefer). The `b` key in `mode.service` here sends SIGUSR1 and returns to main mode:
-
-```toml
-mode.service.binding = {
-  b = ["exec-and-forget /bin/bash -c 'pkill -USR1 zapmenu'" "mode main"]
-}
-```
-
-Enter service mode with your existing binding (e.g. `alt-shift-semicolon = "mode service"`), then press `b` to toggle the clamp. See a [full working example in nix-darwin](https://github.com/kaynetik/kaynix/blob/main/modules/aerospace.nix).
-
-### Hammerspoon example
+**Hammerspoon**
 
 ```lua
 hs.hotkey.bind({"cmd", "alt"}, "b", function()
@@ -133,52 +64,32 @@ hs.hotkey.bind({"cmd", "alt"}, "b", function()
 end)
 ```
 
+**AeroSpace** (start at login, toggle from service mode; [full example](https://github.com/kaynetik/kaynix/blob/main/modules/aerospace.nix))
+
+```toml
+after-startup-command = ["exec-and-forget /usr/local/bin/zapmenu"]
+
+mode.service.binding = {
+  b = ["exec-and-forget /bin/bash -c 'pkill -USR1 zapmenu'" "mode main"]
+}
+```
+
 ## Build from source
 
-Requires [Zig](https://ziglang.org/download/) 0.17.1 and macOS with Xcode or Command Line Tools installed.
+Requires [Zig](https://ziglang.org/download/) 0.17.1 and Xcode or Command Line Tools.
 
 ```sh
-zig build                              # debug build
-zig build -Doptimize=ReleaseFast       # release build (~55KB)
+zig build                                  # zig-out/bin/zapmenu and zig-out/Zapmenu.app
+zig build -Doptimize=ReleaseFast           # release build
+zig build -Dtarget=x86_64-macos            # cross-compile (or aarch64-macos)
+zig build test                             # unit tests
+zig build bench                            # hot-path benchmarks
+./scripts/package-release.sh v1.3.0        # release artifacts in dist/
 ```
 
-The binary is placed in `zig-out/bin/zapmenu`. `zig build` also writes `zig-out/Zapmenu.app`. Run that app so macOS can list it under Device Control and Data Access:
-
-```sh
-open zig-out/Zapmenu.app
-```
-
-### Cross-compile (on macOS)
-
-```sh
-zig build -Dtarget=aarch64-macos       # Apple Silicon
-zig build -Dtarget=x86_64-macos        # Intel
-```
-
-### Tests and benchmarks
-
-```sh
-zig build test                         # run unit tests
-zig build bench                        # run hot-path benchmarks
-```
-
-## Benchmark
-
-```bash
-zig build bench
-
-# clampY (clamped)          1.98 ns/call (10000000 iters)
-# clampY (passthrough)      1.40 ns/call (10000000 iters)
-# exposedTop (2 displays)   3.31 ns/call (10000000 iters)
-# handleKeyDown (miss)      0.69 ns/call (10000000 iters)
-# toggleBypass              1.57 ns/call (10000000 iters)
-
-# To measure idle CPU usage, run zapmenu manually and check:
-#   ps -o %cpu,rss -p $(pgrep zapmenu)
-```
+Open `zig-out/Zapmenu.app` rather than the bare binary so macOS lists it under Device Control and Data Access. To keep that grant across rebuilds, sign with a stable certificate: `scripts/create-signing-cert.sh`, then `-Dsign-identity="zapmenu Dev"`.
 
 ## Notes
 
-- This is a terminal application with no GUI.
-- macOS-only (depends on CoreGraphics event taps).
-- The 4px dead zone at the top of each screen may interfere with some apps; toggle it off with the hotkey or a signal.
+- Terminal/background app with no GUI; macOS only (CoreGraphics event taps).
+- The 4px dead zone may interfere with some apps; toggle it off with the hotkey or a signal.
